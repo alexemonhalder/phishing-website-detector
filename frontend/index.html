@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phish Line — URL Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1220;
+    --surface: #121B2E;
+    --surface-2: #182543;
+    --border: #22314F;
+    --text: #E7ECF5;
+    --text-dim: #8C9AB8;
+    --safe: #35D0BA;
+    --danger: #FF5470;
+    --warn: #F5B942;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: radial-gradient(circle at 15% 0%, #131e38 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    padding: 0 20px 80px;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; }
+
+  header {
+    padding: 56px 0 32px;
+    text-align: center;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--safe);
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 5vw, 48px);
+    font-weight: 700;
+    margin: 0 0 12px;
+    line-height: 1.1;
+  }
+
+  header p {
+    color: var(--text-dim);
+    font-size: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .scan-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px 8px 8px 16px;
+    margin-top: 32px;
+  }
+
+  .scan-bar .lock {
+    font-size: 15px;
+    color: var(--text-dim);
+    transition: color 0.2s ease;
+  }
+
+  .scan-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    padding: 10px 0;
+  }
+
+  .scan-bar input::placeholder { color: #566380; }
+
+  .scan-bar button {
+    background: var(--safe);
+    color: #06231F;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 11px 20px;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+    white-space: nowrap;
+  }
+  .scan-bar button:hover { transform: translateY(-1px); }
+  .scan-bar button:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+  .error-msg {
+    margin-top: 12px;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  /* ---- Console / signature element ---- */
+  .console {
+    margin-top: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: none;
+  }
+  .console.active { display: block; }
+
+  .console-title {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+
+  .check-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px 20px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+  @media (max-width: 560px) { .check-grid { grid-template-columns: 1fr; } }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    color: var(--text-dim);
+    opacity: 0;
+    transform: translateY(2px);
+    animation: reveal 0.3s ease forwards;
+  }
+
+  @keyframes reveal { to { opacity: 1; transform: translateY(0); } }
+
+  .check-row .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .check-row.pass .dot { background: var(--safe); }
+  .check-row.fail .dot { background: var(--danger); }
+  .check-row.neutral .dot { background: var(--warn); }
+  .check-row.pass { color: var(--text); }
+  .check-row.fail { color: var(--text); }
+
+  /* ---- Verdict card ---- */
+  .verdict {
+    margin-top: 24px;
+    border-radius: 14px;
+    padding: 28px;
+    display: none;
+    border: 1px solid var(--border);
+  }
+  .verdict.active { display: block; }
+  .verdict.legit { background: linear-gradient(135deg, #0f2b28, var(--surface)); border-color: #1d4a43; }
+  .verdict.phish { background: linear-gradient(135deg, #341521, var(--surface)); border-color: #5c2436; }
+
+  .verdict-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .verdict-label {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+  }
+  .verdict.legit .verdict-label { color: var(--safe); }
+  .verdict.phish .verdict-label { color: var(--danger); }
+
+  .confidence {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .confidence b { color: var(--text); }
+
+  .bar-track {
+    margin-top: 18px;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    overflow: hidden;
+    display: flex;
+  }
+  .bar-fill-danger { background: var(--danger); height: 100%; }
+  .bar-fill-safe { background: var(--safe); height: 100%; }
+
+  .bar-caption {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+
+  .warnings {
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    line-height: 1.6;
+  }
+  .warnings summary { cursor: pointer; color: var(--warn); margin-bottom: 6px; }
+
+  footer {
+    text-align: center;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    margin-top: 48px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">// live feature scan</div>
+    <h1>Paste a link.<br>See what it's hiding.</h1>
+    <p>Runs 30 structural, domain, and HTML checks against a URL and scores it with a trained Random Forest model — no blocklists, just the shape of the page itself.</p>
+  </header>
+
+  <div class="scan-bar">
+    <span class="lock" id="lockIcon">○</span>
+    <input id="urlInput" type="text" placeholder="paste a url, e.g. http://example.com/login" autocomplete="off" />
+    <button id="scanBtn" onclick="runScan()">Scan</button>
+  </div>
+  <div class="error-msg" id="errorMsg" style="display:none;"></div>
+
+  <div class="console" id="console">
+    <div class="console-title">Feature checklist</div>
+    <div class="check-grid" id="checkGrid"></div>
+  </div>
+
+  <div class="verdict" id="verdict">
+    <div class="verdict-top">
+      <div>
+        <div class="verdict-label" id="verdictLabel">—</div>
+        <div class="confidence" id="verdictUrl"></div>
+      </div>
+      <div class="confidence">confidence <b id="confidenceValue">—</b></div>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill-danger" id="phishBar" style="width:0%"></div>
+      <div class="bar-fill-safe" id="legitBar" style="width:0%"></div>
+    </div>
+    <div class="bar-caption">
+      <span>phishing <span id="phishPct">0%</span></span>
+      <span>legitimate <span id="legitPct">0%</span></span>
+    </div>
+    <details class="warnings" id="warningsBox" style="display:none;">
+      <summary>extraction notes</summary>
+      <div id="warningsList"></div>
+    </details>
+  </div>
+
+  <footer>backend: FastAPI · model: scikit-learn RandomForest · trained on the UCI Phishing Websites dataset</footer>
+</div>
+
+<script>
+  // Point this at your running FastAPI backend.
+  const API_BASE = "http://localhost:8000";
+
+  const FEATURE_LABELS = {
+    having_IP_Address: "IP address in URL",
+    URL_Length: "URL length",
+    Shortining_Service: "Shortening service",
+    having_At_Symbol: "'@' symbol present",
+    double_slash_redirecting: "'//' redirect trick",
+    Prefix_Suffix: "Hyphen in domain",
+    having_Sub_Domain: "Subdomain depth",
+    SSLfinal_State: "SSL / HTTPS state",
+    Domain_registeration_length: "Registration length",
+    Favicon: "Favicon source",
+    port: "Non-standard port",
+    HTTPS_token: "'https' token in hostname",
+    Request_URL: "External resource ratio",
+    URL_of_Anchor: "Anchor tag targets",
+    Links_in_tags: "Meta/script/link targets",
+    SFH: "Form handler target",
+    Submitting_to_email: "Submits via email",
+    Abnormal_URL: "WHOIS/domain mismatch",
+    Redirect: "Redirect chain length",
+    on_mouseover: "onMouseOver status trick",
+    RightClick: "Right-click disabled",
+    popUpWidnow: "Popup with input field",
+    Iframe: "Hidden iframe",
+    age_of_domain: "Domain age",
+    DNSRecord: "DNS record found",
+    web_traffic: "Traffic rank (approx.)",
+    Page_Rank: "Page rank (approx.)",
+    Google_Index: "Search-indexed (approx.)",
+    Links_pointing_to_page: "Inbound links (approx.)",
+    Statistical_report: "Blacklist report (approx.)",
+  };
+
+  function setLock(state) {
+    const lock = document.getElementById("lockIcon");
+    if (state === "safe") { lock.textContent = "🔒"; lock.style.color = "#35D0BA"; }
+    else if (state === "danger") { lock.textContent = "⚠"; lock.style.color = "#FF5470"; }
+    else { lock.textContent = "○"; lock.style.color = "#8C9AB8"; }
+  }
+
+  function renderChecks(features) {
+    const grid = document.getElementById("checkGrid");
+    grid.innerHTML = "";
+    const keys = Object.keys(features);
+    keys.forEach((key, i) => {
+      const val = features[key];
+      const cls = val === 1 ? "pass" : val === -1 ? "fail" : "neutral";
+      const row = document.createElement("div");
+      row.className = `check-row ${cls}`;
+      row.style.animationDelay = `${i * 25}ms`;
+      row.innerHTML = `<span class="dot"></span><span>${FEATURE_LABELS[key] || key}</span>`;
+      grid.appendChild(row);
+    });
+    document.getElementById("console").classList.add("active");
+  }
+
+  function renderVerdict(data) {
+    const verdictEl = document.getElementById("verdict");
+    const label = document.getElementById("verdictLabel");
+    const isLegit = data.verdict === "legitimate";
+
+    verdictEl.className = `verdict active ${isLegit ? "legit" : "phish"}`;
+    label.textContent = isLegit ? "Looks legitimate" : "Likely phishing";
+    document.getElementById("verdictUrl").textContent = data.url;
+    document.getElementById("confidenceValue").textContent =
+      (data.confidence * 100).toFixed(1) + "%";
+
+    const phishPct = (data.phishing_probability * 100).toFixed(1);
+    const legitPct = (data.legitimate_probability * 100).toFixed(1);
+    document.getElementById("phishBar").style.width = phishPct + "%";
+    document.getElementById("legitBar").style.width = legitPct + "%";
+    document.getElementById("phishPct").textContent = phishPct + "%";
+    document.getElementById("legitPct").textContent = legitPct + "%";
+
+    setLock(isLegit ? "safe" : "danger");
+
+    const warnBox = document.getElementById("warningsBox");
+    const warnList = document.getElementById("warningsList");
+    if (data.warnings && data.warnings.length) {
+      warnList.innerHTML = data.warnings.map(w => `· ${w}`).join("<br>");
+      warnBox.style.display = "block";
+    } else {
+      warnBox.style.display = "none";
+    }
+  }
+
+  async function runScan() {
+    const input = document.getElementById("urlInput");
+    const btn = document.getElementById("scanBtn");
+    const errorMsg = document.getElementById("errorMsg");
+    const url = input.value.trim();
+
+    errorMsg.style.display = "none";
+    if (!url) return;
+
+    btn.disabled = true;
+    btn.textContent = "Scanning…";
+    setLock("neutral");
+    document.getElementById("console").classList.remove("active");
+    document.getElementById("verdict").classList.remove("active");
+
+    try {
+      const res = await fetch(`${API_BASE}/predict`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Request failed (${res.status})`);
+      }
+      const data = await res.json();
+      renderChecks(data.features);
+      renderVerdict(data);
+    } catch (e) {
+      errorMsg.textContent = `Scan failed: ${e.message}. Is the backend running at ${API_BASE}?`;
+      errorMsg.style.display = "block";
+      setLock("neutral");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Scan";
+    }
+  }
+
+  document.getElementById("urlInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runScan();
+  });
+</script>
+</body>
+</html>
