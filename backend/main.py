@@ -1,20 +1,4 @@
-"""
-main.py — FastAPI backend for the phishing website detector.
-
-Endpoints:
-    GET  /health          -> simple liveness check
-    POST /predict          -> body: {"url": "..."}  -> verdict + confidence + feature breakdown
-
-Run locally:
-    pip install -r requirements.txt
-    uvicorn main:app --reload --port 8000
-
-Expects the trained model files at ./model/phishing_model.pkl and ./model/scaler.pkl
-(the two files your notebook saved with joblib.dump).
-"""
-
 from pathlib import Path
-
 import joblib
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -23,13 +7,14 @@ from pydantic import BaseModel, field_validator
 
 from feature_extractor import PhishingFeatureExtractor
 
+# Model and Scaler absolute paths resolution
 MODEL_DIR = Path(__file__).parent / "model"
 MODEL_PATH = MODEL_DIR / "phishing_model.pkl"
 SCALER_PATH = MODEL_DIR / "scaler.pkl"
 
 app = FastAPI(title="Phishing Website Detector API")
 
-# Allow the static frontend (served from a different port/file://) to call this API.
+# Enable CORS for Frontend communication
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,18 +25,15 @@ app.add_middleware(
 model = None
 scaler = None
 
-
-@app.on_event("startup")
-def load_model():
+def get_model():
+    """Lazy load model and scaler to prevent startup crashing in Vercel Serverless"""
     global model, scaler
-    if not MODEL_PATH.exists() or not SCALER_PATH.exists():
-        raise RuntimeError(
-            f"Model files not found. Copy phishing_model.pkl and scaler.pkl "
-            f"(from your notebook's joblib.dump step) into {MODEL_DIR}/"
-        )
-    model = joblib.load(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-
+    if model is None or scaler is None:
+        if not MODEL_PATH.exists() or not SCALER_PATH.exists():
+            raise RuntimeError("Model or Scaler file not found in backend/model directory.")
+        model = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+    return model, scaler
 
 class URLRequest(BaseModel):
     url: str
@@ -64,39 +46,43 @@ class URLRequest(BaseModel):
             raise ValueError("url must not be empty")
         return v
 
-
 class PredictionResponse(BaseModel):
     url: str
-    verdict: str          # "phishing" | "legitimate"
-    confidence: float      # 0-1, model's confidence in the verdict
+    verdict: str
+    confidence: float
     phishing_probability: float
     legitimate_probability: float
     features: dict
     warnings: list[str]
 
-
+# Health check endpoints for Vercel
+@app.get("/")
+@app.get("/api/health")
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": model is not None}
+    try:
+        m, _ = get_model()
+        return {"status": "ok", "model_loaded": m is not None}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-
+# Main Prediction Endpoints (Supports both direct and /api paths)
 @app.post("/predict", response_model=PredictionResponse)
+@app.post("/api/predict", response_model=PredictionResponse)
 def predict(req: URLRequest):
-    if model is None or scaler is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    mdl, scl = get_model()
 
     extractor = PhishingFeatureExtractor(req.url)
     features, warnings = extractor.extract()
 
-    # Order values exactly as FEATURE_ORDER / the training column order
     ordered_values = [features[name] for name in PhishingFeatureExtractor.FEATURE_ORDER]
     X = np.array(ordered_values).reshape(1, -1)
-    X_scaled = scaler.transform(X)
+    X_scaled = scl.transform(X)
 
-    pred = model.predict(X_scaled)[0]  # 1 = legitimate, 0 = phishing (per training encoding)
+    pred = mdl.predict(X_scaled)[0]
 
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X_scaled)[0]
+    if hasattr(mdl, "predict_proba"):
+        proba = mdl.predict_proba(X_scaled)[0]
         legit_prob = float(proba[1])
         phishing_prob = float(proba[0])
     else:
