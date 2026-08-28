@@ -291,8 +291,13 @@
 </div>
 
 <script>
-  // Point this at your running FastAPI backend.
-  const API_BASE = "/api";
+
+  // Automatically detect local vs production
+const API_BASE =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
+    ? "http://127.0.0.1:8000"
+    : "https://YOUR-BACKEND.vercel.app";
 
   const FEATURE_LABELS = {
     having_IP_Address: "IP address in URL",
