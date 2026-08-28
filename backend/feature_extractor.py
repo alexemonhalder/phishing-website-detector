@@ -39,8 +39,8 @@ try:
 except ImportError:
     whois = None
 
-TIMEOUT = 6
-HEADERS = {"User-Agent": "Mozilla/5.0 (phishing-detector-bot)"}
+TIMEOUT = 3
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 SHORTENING_SERVICES = re.compile(
     r"bit\.ly|goo\.gl|shorte\.st|go2l\.ink|x\.co|ow\.ly|t\.co|tinyurl|tr\.im|"
